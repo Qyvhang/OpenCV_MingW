@@ -7,14 +7,13 @@
 - **操作系统**: Windows 10
 - **编译器**: MinGW-8.10 (GCC 8.1.0)
 - **CMake版本**: 3.30.0
-- **CUDA版本**: 12.5
 
 ## 特性与支持
 
 - ✅ 包含完整的OpenCV 4.11.0核心库
 - ✅ 包含所有opencv_contrib扩展模块
 - ✅ 使用world模式编译(单一DLL文件)
-- ✅ 启用CUDA支持
+- ❌ 不支持CUDA（Windows平台MinGW限制，仅MSVC支持）
 - ✅ 启用OpenCL支持
 - ✅ 支持C++开发
 - ❌ 不包含Python绑定
@@ -62,6 +61,33 @@
 - 需要使用MinGW-8.10或更高版本
 - 如果遇到DLL错误，请确保系统PATH包含MinGW-8.10的bin目录
 
+## 关于 CUDA 支持的说明
+
+由于 OpenCV 的架构限制，**Windows 平台上的 CUDA 加速仅支持 MSVC 编译器**，MinGW 编译的版本无法启用 CUDA。
+
+这是因为：
+1. NVIDIA CUDA Toolkit 在 Windows 上只官方支持 MSVC 编译器
+2. CUDA 运行时库与 MinGW 的 ABI 不兼容
+3. OpenCV 源码中明确限制了 MinGW 下的 CUDA 支持
+
+### GPU 加速替代方案
+
+如果您需要 GPU 加速，有以下选择：
+
+1. **使用 OpenCL**（推荐）
+   - 本版本已启用 OpenCL 支持
+   - 支持更广泛的硬件（AMD、Intel、NVIDIA）
+   - 可在支持的设备上提供 GPU 加速
+   - 对于大多数应用场景已足够
+
+2. **使用 MSVC 版本**
+   - 如需 CUDA 支持，请使用 Visual Studio 编译的 OpenCV 版本
+   - CUDA 在 NVIDIA GPU 上通常性能更好
+
+3. **使用 CPU 优化**
+   - MinGW 版本仍包含完整的功能
+   - CPU 性能经过优化
+
 ## 编译选项
 
 本版本使用以下CMake选项编译:
@@ -69,7 +95,6 @@
 ```
 cmake -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release ^
     -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib/modules ^
-    -DWITH_CUDA=ON ^
     -DWITH_OPENCL=ON ^
     -DWITH_QT=ON ^
     -DWITH_GTK=ON ^
