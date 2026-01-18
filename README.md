@@ -18,13 +18,15 @@
 | OpenCV 核心库     | 支持       | 支持         |
 | contrib 扩展模块  | 支持       | 支持         |
 | 单一DLL (world)   | 支持       | 支持         |
-| CUDA 支持         | 支持       | 支持         |
+| CUDA 支持         | 不支持*    | 不支持*      |
 | OpenCL 支持       | 支持       | 支持         |
 | DirectX 支持      | 不支持     | 支持         |
 | C++ 开发          | 支持       | 支持         |
 | Python 绑定       | 不支持     | 不支持       |
 | Java 绑定         | 不支持     | 不支持       |
 | Windows API兼容性 | 一般       | 优秀         |
+
+**注***: Windows 平台上 CUDA 仅支持 MSVC 编译器（OpenCV 限制），MinGW 版本不支持。可使用 OpenCL 作为 GPU 加速替代方案。
 
 ## 主要功能模块
 
@@ -85,7 +87,7 @@ int main() {
 
 ### MinGW-8.10版本
 
-- **编译环境**: Windows 10, MinGW-8.10 (GCC 8.1.0), CMake 3.30.0, CUDA 12.5
+- **编译环境**: Windows 10, MinGW-8.10 (GCC 8.1.0), CMake 3.30.0
 - **兼容性**: 需要MinGW-8.10或更高版本，不兼容MSVC
 - **注意事项**: 不支持DirectX相关功能
 - **编译选项**:
@@ -93,7 +95,6 @@ int main() {
 ```
 cmake -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release ^
     -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib/modules ^
-    -DWITH_CUDA=ON ^
     -DWITH_OPENCL=ON ^
     -DWITH_QT=ON ^
     -DWITH_GTK=ON ^
@@ -109,7 +110,7 @@ cmake -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release ^
 
 ### MinGW-13.1.0版本
 
-- **编译环境**: Windows 11, MinGW-13.1.0 (GCC 13.1.0), CMake 3.30.0, CUDA 12.5
+- **编译环境**: Windows 11, MinGW-13.1.0 (GCC 13.1.0), CMake 3.30.0
 - **兼容性**: 需要MinGW-13.1.0或更高版本，不兼容MSVC
 - **优势**: 完全支持DirectX功能，更好的Windows API兼容性
 - **编译选项**:
@@ -117,7 +118,6 @@ cmake -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release ^
 ```
 cmake -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release ^
     -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib/modules ^
-    -DWITH_CUDA=ON ^
     -DWITH_OPENCL=ON ^
     -DWITH_QT=ON ^
     -DWITH_GTK=ON ^
@@ -157,6 +157,33 @@ cmake -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release ^
 - 确保您的应用程序使用对应版本或更高版本的MinGW
 - 如果遇到DLL加载错误，请确保系统PATH包含相应MinGW版本的bin目录
 - MinGW-13.1.0版本对Windows API的支持更加完善，特别是DirectX相关功能
+
+## 关于 CUDA 支持的说明
+
+由于 OpenCV 的架构限制，**Windows 平台上的 CUDA 加速仅支持 MSVC 编译器**，MinGW 编译的版本无法启用 CUDA。
+
+这是因为：
+1. NVIDIA CUDA Toolkit 在 Windows 上只官方支持 MSVC 编译器
+2. CUDA 运行时库与 MinGW 的 ABI 不兼容
+3. OpenCV 源码中明确限制了 MinGW 下的 CUDA 支持
+
+### GPU 加速替代方案
+
+如果您需要 GPU 加速，有以下选择：
+
+1. **使用 OpenCL**（推荐）
+   - 本版本已启用 OpenCL 支持
+   - 支持更广泛的硬件（AMD、Intel、NVIDIA）
+   - 可在支持的设备上提供 GPU 加速
+   - 对于大多数应用场景已足够
+
+2. **使用 MSVC 版本**
+   - 如需 CUDA 支持，请使用 Visual Studio 编译的 OpenCV 版本
+   - CUDA 在 NVIDIA GPU 上通常性能更好
+
+3. **使用 CPU 优化**
+   - MinGW 版本仍包含完整的功能
+   - CPU 性能经过优化
 
 ## 使用场景建议
 
