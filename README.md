@@ -26,7 +26,7 @@
 | Java 绑定         | 不支持     | 不支持       |
 | Windows API兼容性 | 一般       | 优秀         |
 
-**注**: Windows 平台上 CUDA 仅支持 MSVC 编译器（OpenCV 限制），MinGW 版本不支持。可使用 OpenCL 作为 GPU 加速替代方案。
+**注***: Windows 平台上 CUDA 仅支持 MSVC 编译器（OpenCV 限制），MinGW 版本不支持。可使用 OpenCL 作为 GPU 加速替代方案。
 
 ## 主要功能模块
 
