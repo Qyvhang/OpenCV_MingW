@@ -1035,7 +1035,8 @@ connect(worker, &ScannerWorker::fileFound,
 ## Qt 5 → Qt 6 常见措辞速查
 
 | 旧写法 / 常见误解 | 现状 |
-|---|---| QHeaderView::setResizeMode | 已弃用，用 setSectionResizeMode |
+|---|---|
+| QHeaderView::setResizeMode | 已弃用，用 setSectionResizeMode |
 | QHeaderView::setStretchLastSection | 未弃用，仍是「最后一列拉伸」专用；全列均匀拉伸用 setSectionResizeMode(QHeaderView::Stretch) |
 | 点了表头会排序（只设 setSortingEnabled） | QAbstractTableModel 默认 sort() 不重排数据；排序用 QSortFilterProxyModel |
 | 没设 NoEditTriggers 就一定能编辑 | 编辑能力由 flags() 的 ItemIsEditable 与 editTriggers 共同决定 |
