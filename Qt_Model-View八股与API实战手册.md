@@ -114,7 +114,7 @@ View 用 QModelIndex 告诉 Model「我现在要的是哪一格」。它内部�
 
 `QModelIndex()` 默认构造出来的是一个**无效索引**，`isValid()` 返回 false。Qt 常用它表示「不存在」或「根」，所以表格模型的 `parent.isValid()` 才总是 false。
 
-## 2.3 两个重要结论
+## 2.3 几个重要结论
 
 - QModelIndex 是轻量值类型（内部通常就是指针 + 行 + 列），可以随意拷贝和比较；
 - QModelIndex 是位置描述，不是稳定的业务 ID。模型结构变化后，索引是否仍指向原来的项取决于具体操作以及 Model 是否正确发出结构变更通知；不要把普通 QModelIndex 当作跨任意变化的长期引用；
@@ -594,6 +594,7 @@ const FileInfo *fileAt(int row) const
 注意：fileAt() 返回的是指向 Model 内部容器元素的指针。后续插入、删除、排序或重建容器可能使指针/引用失效，不要长期保存；若调用方需要长期持有数据，考虑按值返回 FileInfo 或保存稳定业务 ID。
 
 View 不回传数据，取数据永远走 Model。
+
 ---
 
 # 8. 选择模型
@@ -609,7 +610,7 @@ QModelIndexList rows = sel->selectedRows();    // 所有选中行的第一列索
 int row = sel->currentIndex().row();           // 当前行（虚实线框那一格所在行）
 ~~~
 
-注意「当前项」和「选中项」是两回事：ExtendedSelection 下拖一片，current 只是最后点击的那一格，selectedRows 才是全部。
+注意「当前项」和「选中项」是两回事：ExtendedSelection 下拖一片，current 只是最后点击的那一格，selectedRows 才是全部。若 View 接的是代理模型，取源模型数据前先用 `mapToSource()` 转换索引。
 
 ## 8.2 常用 API 与信号
 
@@ -690,7 +691,7 @@ bool MyProxyModel::lessThan(const QModelIndex &left,
 }
 ~~~
 
-典型面试点：数字列如果以字符串返回就会按字典序（`10` 排在 `9` 前）——要么重写 lessThan 按数值比较，要么统一让这一列返回数值类型。
+典型面试点：数字列如果以字符串返回就会按字典序（`10` 排在 `9` 前）——要么重写 lessThan 按数值比较，要么统一让这一列返回数值类型。若已通过 `proxy->setSortRole(Qt::UserRole)` 指定排序角色，也可以在 `lessThan()` 中使用 `left.data(sortRole())` / `right.data(sortRole())`，避免把排序角色写死。
 
 ## 9.4 显示文本和排序值分离：sortRole + UserRole
 
@@ -743,9 +744,9 @@ QTableView 刷新
 model->addFile(file);     // Worker 线程直接改 Model
 ~~~
 
-后果不是「一定会崩」，而是数据竞争和 UI 状态错乱都可能发生，属于未定义行为，不值得赌。
+这会造成对同一 Model 的并发访问风险，可能引发数据竞争和 UI 状态错乱；本手册按应避免的未定义行为风险处理，不应这样写。
 
-## 10.4 自定义类型跨线程要注册
+## 10.4 自定义类型跨线程：元类型声明与注册
 
 FileInfo 是自定义 struct 时，是否需要显式声明/注册元类型，取决于目标 Qt 6 小版本、信号槽连接方式，以及该类型是否用于 QVariant 等元类型设施。不要把它概括为「所有 Qt 6 自定义类型跨线程都必须同时做两步」。
 
@@ -1025,8 +1026,8 @@ proxy->mapToSource(proxyIndex).row();
 
 ~~~cpp
 // 跨线程
-Q_DECLARE_METATYPE(FileInfo)              // 头文件
-qRegisterMetaType<FileInfo>("FileInfo");  // main()
+Q_DECLARE_METATYPE(FileInfo)              // 按目标 Qt 版本与类型用途确认是否需要
+qRegisterMetaType<FileInfo>("FileInfo");  // 按目标 Qt 版本与连接方式确认是否需要
 connect(worker, &ScannerWorker::fileFound,
         this, &MainWindow::onFileFound);  // 跨线程时通常采用 Queued；槽里再 addFile
 ~~~
@@ -1034,7 +1035,7 @@ connect(worker, &ScannerWorker::fileFound,
 ## Qt 5 → Qt 6 常见措辞速查
 
 | 旧写法 / 常见误解 | 现状 |
-|---|---|| QHeaderView::setResizeMode | 已弃用，用 setSectionResizeMode |
+|---|---| QHeaderView::setResizeMode | 已弃用，用 setSectionResizeMode |
 | QHeaderView::setStretchLastSection | 未弃用，仍是「最后一列拉伸」专用；全列均匀拉伸用 setSectionResizeMode(QHeaderView::Stretch) |
 | 点了表头会排序（只设 setSortingEnabled） | QAbstractTableModel 默认 sort() 不重排数据；排序用 QSortFilterProxyModel |
 | 没设 NoEditTriggers 就一定能编辑 | 编辑能力由 flags() 的 ItemIsEditable 与 editTriggers 共同决定 |
