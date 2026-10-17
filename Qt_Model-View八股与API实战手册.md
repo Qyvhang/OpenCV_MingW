@@ -117,12 +117,16 @@ View 用 QModelIndex 告诉 Model「我现在要的是哪一格」。它内部�
 ## 2.3 两个重要结论
 
 - QModelIndex 是轻量值类型（内部通常就是指针 + 行 + 列），可以随意拷贝和比较；
-- 但它是**短暂**的：底层 Model 一旦插入、删除或排序，旧索引就可能指向错误的位置甚至失效。需要长期保存某个位置时用 QPersistentModelIndex，而不是裸存 QModelIndex；
+- QModelIndex 是位置描述，不是稳定的业务 ID。模型结构变化后，索引是否仍指向原来的项取决于具体操作以及 Model 是否正确发出结构变更通知；不要把普通 QModelIndex 当作跨任意变化的长期引用；
+- 需要在模型变化后继续跟踪某个模型项时，可以考虑 QPersistentModelIndex。它会在 Model 正确实现通知协议的前提下跟踪部分结构变化，但对应项被删除或模型重置后仍可能失效；使用前仍要检查 isValid()；
+- 若要长期识别文件、用户或设备等业务对象，优先保存稳定业务 ID，需要时再通过 Model 查询索引。
 
 ~~~cpp
-QPersistentModelIndex saved(index);   // index 来自任意来源，例如 View 的当前格
-// 之后结构变化（插入、排序）时，持续索引会尽量跟随同一个数据项；
-// 若那个数据项本身被删除，持续索引同样会失效，用时仍要以 isValid() 检查。
+QPersistentModelIndex saved(index);   // 适合需要跨部分模型变化跟踪模型项的场景
+// 插入、删除、移动等操作后仍需检查有效性；不要把它当作永不失效的业务 ID。
+if (saved.isValid()) {
+    const QVariant value = saved.data(Qt::DisplayRole);
+}
 ~~~
 
 ---
@@ -660,8 +664,15 @@ table->setModel(proxy);              // View 接的是代理
 bool MyProxyModel::lessThan(const QModelIndex &left,
                             const QModelIndex &right) const
 {
-    if (left.column() == 2)          // 大小列按数值比较
-        return left.data().toLongLong() < right.data().toLongLong();
+    // 示例假设大小列通过 Qt::UserRole 返回原始整数值。
+    if (left.column() == 2 && right.column() == 2) {
+        bool leftOk = false;
+        bool rightOk = false;
+        const qlonglong leftSize = left.data(Qt::UserRole).toLongLong(&leftOk);
+        const qlonglong rightSize = right.data(Qt::UserRole).toLongLong(&rightOk);
+        if (leftOk && rightOk)
+            return leftSize < rightSize;
+    }
     return QSortFilterProxyModel::lessThan(left, right);
 }
 ~~~
@@ -691,9 +702,10 @@ proxy->setSortRole(Qt::UserRole);   // 按 UserRole（数值）排序
 
 - QWidget 及其子类（包括 QTableView）只能在 GUI 主线程用；
 - Model 挂在 View 上，工程上同样只由主线程修改；
-- Qt 的 Model 和 View 都不是为多线程并发访问设计的，跨线程直接调用是未定义行为。
+- Model/View 不应被多个线程无同步地并发访问；挂接到 GUI View 的 Model，应采用 GUI 线程更新的设计。
+- QObject 的线程亲和性不会自动让普通成员函数调用排队；直接跨线程调用也不会自动变成异步调用。具体风险取决于被调用方法和是否存在并发访问，不能把所有跨线程函数调用一概说成未定义行为。
 
-由此推出：**Worker 线程永远不碰 Model。**
+本手册的文件扫描示例采用一条简单、稳妥的工程规则：**Worker 不直接修改挂接到 View 的 Model，而是通过 queued signal 将结果交给 GUI 线程更新。**
 
 ## 10.2 文件扫描的正确数据流
 
@@ -722,20 +734,19 @@ model->addFile(file);     // Worker 线程直接改 Model
 
 ## 10.4 自定义类型跨线程要注册
 
-FileInfo 是自定义 struct 时，queued 信号要求类型可复制、可默认构造，并注册元类型：
+FileInfo 是自定义 struct 时，是否需要显式声明/注册元类型，取决于目标 Qt 6 小版本、信号槽连接方式，以及该类型是否用于 QVariant 等元类型设施。不要把它概括为「所有 Qt 6 自定义类型跨线程都必须同时做两步」。
 
 ~~~cpp
-// fileinfo.h，类型定义之后
+// fileinfo.h：若需要通过 QVariant 等元类型设施使用自定义类型，可声明
 Q_DECLARE_METATYPE(FileInfo)
 
-// main() 里，启动时执行一次
+// 在目标 Qt 版本和连接方式要求运行期注册时，于初始化阶段执行
 qRegisterMetaType<FileInfo>("FileInfo");
 ~~~
 
-- `Q_DECLARE_METATYPE` 是**编译期**声明，放头文件；
-- `qRegisterMetaType` 是**运行期**调用，放 main 或模块初始化处。
-
-Qt 6 新式 connect 下很多类型能自动注册，但跨线程 queued + 自定义结构显式注册最稳，面试也按「声明放头文件、注册放 main」答。
+- Q_DECLARE_METATYPE 提供编译期元类型声明；
+- qRegisterMetaType 进行运行期注册，某些 queued connection / 元对象使用场景需要它；
+- Qt 6 不同小版本对新式 connect 的类型检查和自动注册能力有差异。以项目实际 Qt 版本的文档、编译诊断和运行结果为准；显式注册可以用于兼容需要注册的场景，但不能替代正确的线程连接设计。
 
 ## 10.5 完整接线示例
 
@@ -785,6 +796,19 @@ Worker 攒满 100 个 → emit filesFound(QVector<FileInfo>)
 ~~~
 
 批量版的 addFiles 见 6.6。核心原则不变：**通知放主线程，一次通知带一批数据。**
+
+## 10.7 取消扫描与线程退出
+
+上面的接线展示了基本数据流，不等于完整的任务生命周期管理。真实应用还要处理用户取消、窗口关闭、目录访问失败和重复启动：
+
+- **协作式取消**：Worker 在遍历目录和处理批次时定期检查取消标志。不要假设发一个 queued 的取消槽就能立即打断正在执行的长时间阻塞函数。
+- **避免随意使用 QThread::terminate()**：强制终止可能使资源、锁和对象状态处于不一致状态。
+- **理解 quit() 的边界**：它请求线程事件循环退出，不会强制中断正在运行的阻塞代码；Worker 应能及时返回事件循环或以明确方式结束工作。
+- **窗口关闭前安排清理**：请求任务停止，并按设计等待线程完成后再销毁依赖对象。不要在关联线程仍运行时销毁 QThread 对象。
+- **检查对象所有权和删除时序**：deleteLater() 依赖事件循环及退出时序，需确保对象在合适的线程和生命周期阶段销毁，避免重复删除或悬空访问。
+- **覆盖失败路径**：至少测试正常完成、空目录、无权限目录、大量文件、用户取消、扫描中关闭窗口和重复启动。
+
+对于长时间任务，可采用分块处理、线程安全取消标志，或适合场景的 QThreadPool / QtConcurrent。选择哪种方案取决于任务模型；不要把 moveToThread() 理解成能自动异步化任何函数调用。
 
 ---
 
@@ -868,15 +892,15 @@ section 是第几个表头；orientation 分 Qt::Horizontal（列头）和 Qt::V
 
 ## 11.20 Worker 线程能直接调 model->addFile 吗？
 
-不能。View 和 Model 只该主线程碰。Worker 通过信号把数据发回，主线程槽里再调 addFile。
+对挂接到 GUI View 的 Model，不应让 Worker 直接修改；这份示例采用 Worker 发信号、GUI 线程槽调用 addFile 的方案。QObject 的线程亲和性本身不会把普通函数调用自动排队。
 
 ## 11.21 跨线程传自定义 struct 要做什么？
 
-头文件里 Q_DECLARE_METATYPE(FileInfo)，main 里 qRegisterMetaType<FileInfo>("FileInfo")。前者编译期，后者运行期，别写在一处。
+按目标 Qt 版本、连接方式和类型用途判断是否需要元类型声明/注册；需要时 Q_DECLARE_METATYPE 放类型定义之后，qRegisterMetaType 在初始化阶段调用。不要把两步都说成所有 Qt 6 queued 连接的无条件要求。
 
 ## 11.22 QModelIndex 能长期保存吗？
 
-不建议。模型变动后旧索引会失效或错位，Model 只保证索引短暂有效。长期保存用 QPersistentModelIndex。
+不要把普通 QModelIndex 当作跨任意结构变化的长期引用；具体变化后它是否仍指向原项，取决于操作和 Model 的通知实现。需要跟踪模型项可用 QPersistentModelIndex，但删除/重置后仍可能失效；长期识别业务对象优先使用稳定 ID。
 
 ## 11.23 columnCount()==4 但 data() 少一个 case 会怎样？
 
@@ -900,7 +924,7 @@ section 是第几个表头；orientation 分 Qt::Horizontal（列头）和 Qt::V
 10. 排序过滤是否走的代理模型？
 11. 取数据是否先 mapToSource？
 12. Worker 是否只发信号、从不直接碰 Model？
-13. 自定义类型跨线程是否声明+注册？
+13. 自定义类型是否确实需要元类型声明/运行期注册（按目标 Qt 版本与连接方式核实）？
 14. 批量结果是否攒批一次 addFiles？
 
 ## 12.1 就业实用水平标准
@@ -915,7 +939,7 @@ section 是第几个表头；orientation 分 Qt::Horizontal（列头）和 Qt::V
 - 能设置表格的选行、列宽，并说清编辑能力由 flags() 与 editTriggers 共同决定；
 - 能说出排序过滤必须走代理模型；
 - 能画 Worker → 信号 → 主线程槽 → addFile 的完整链路；
-- 能注册并安全传递自定义类型。
+- 能根据目标 Qt 版本与连接方式判断自定义类型是否需要元类型声明/注册，并验证 queued signal 的数据传递。
 
 ---
 
@@ -991,7 +1015,7 @@ proxy->mapToSource(proxyIndex).row();
 Q_DECLARE_METATYPE(FileInfo)              // 头文件
 qRegisterMetaType<FileInfo>("FileInfo");  // main()
 connect(worker, &ScannerWorker::fileFound,
-        this, &MainWindow::onFileFound);  // 自动 Queued，槽里再 addFile
+        this, &MainWindow::onFileFound);  // 跨线程时通常采用 Queued；槽里再 addFile
 ~~~
 
 ## Qt 5 → Qt 6 常见措辞速查
@@ -1012,5 +1036,5 @@ rowCount / columnCount 报数量，data / headerData 报内容
 所有修改必须 begin/end 或 dataChanged 显式通知
 表格是扁平的：parent 永远无效，0 起始，行前列后
 排序过滤走代理，永不改写源数据
-Worker 只发信号，改 Model 永远回主线程
+此示例中 Worker 发信号，挂接到 GUI View 的 Model 在 GUI 线程更新
 ~~~
