@@ -555,19 +555,31 @@ table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
 
 ## 7.4 拿到当前行的数据
 
-View 永远通过 index 和 Model 交互：
+View 永远通过 index 和 Model 交互，但不要让 View 直接访问 Model 的私有容器：
 
 ~~~cpp
 QModelIndex index = table->currentIndex();      // 当前格
 if (!index.isValid())
     return;
 
-const FileInfo &file = model->m_files.at(index.row());   // 取决于你的访问设计
+const FileInfo *file = model->fileAt(index.row());
+if (!file)
+    return;
 ~~~
 
-如果 View 接的是 QSortFilterProxyModel，`index.row()` 是**代理行号**，直接拿去取源数据会错位——先 `proxy->mapToSource(index).row()` 拿到源行号再取值（见 9.2）。
+如果 View 接的是 QSortFilterProxyModel，index 属于代理模型，index.row() 是代理行号，不能直接传给源 Model。应先映射到源索引，再取源数据（见 9.2）：
 
-更正规的路径是给 Model 加一个取值方法：
+~~~cpp
+const QModelIndex sourceIndex = proxy->mapToSource(index);
+if (!sourceIndex.isValid())
+    return;
+
+const FileInfo *file = model->fileAt(sourceIndex.row());
+if (!file)
+    return;
+~~~
+
+更正规的路径是给 Model 加一个公开读取方法，而不是暴露 m_files：
 
 ~~~cpp
 // FileTableModel 内
@@ -579,8 +591,9 @@ const FileInfo *fileAt(int row) const
 }
 ~~~
 
-View 不回传数据，取数据永远走 Model。
+注意：fileAt() 返回的是指向 Model 内部容器元素的指针。后续插入、删除、排序或重建容器可能使指针/引用失效，不要长期保存；若调用方需要长期持有数据，考虑按值返回 FileInfo 或保存稳定业务 ID。
 
+View 不回传数据，取数据永远走 Model。
 ---
 
 # 8. 选择模型
